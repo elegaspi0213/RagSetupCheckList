@@ -47,8 +47,19 @@ export default function Home() {
 
   const [tasks, setTasks] = useState(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('rag-kanban-tasks');
-      return saved ? JSON.parse(saved) : initialTasks;
+      try {
+        // Try to load from localStorage
+        const saved = localStorage.getItem('rag-kanban-tasks');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          // Verify it's valid data
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch (error) {
+        console.error('Error loading saved tasks:', error);
+      }
     }
     return initialTasks;
   });
@@ -56,12 +67,55 @@ export default function Home() {
   const [draggedTask, setDraggedTask] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
 
-  // Save to localStorage whenever tasks change
+  // Save to localStorage whenever tasks change (with multiple backup keys)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('rag-kanban-tasks', JSON.stringify(tasks));
+      try {
+        const taskData = JSON.stringify(tasks);
+        
+        // Save to primary storage
+        localStorage.setItem('rag-kanban-tasks', taskData);
+        
+        // Save to backup storage (redundancy)
+        localStorage.setItem('rag-kanban-tasks-backup', taskData);
+        
+        // Save timestamp of last save
+        localStorage.setItem('rag-kanban-tasks-timestamp', Date.now().toString());
+        
+        // Also save to sessionStorage as additional backup
+        sessionStorage.setItem('rag-kanban-tasks', taskData);
+        
+      } catch (error) {
+        console.error('Error saving tasks:', error);
+        // If localStorage is full, try to clear old data and retry
+        try {
+          localStorage.clear();
+          localStorage.setItem('rag-kanban-tasks', JSON.stringify(tasks));
+        } catch (retryError) {
+          console.error('Failed to save even after clearing:', retryError);
+        }
+      }
     }
   }, [tasks]);
+
+  // Check for updates from other tabs/windows
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const handleStorageChange = (e) => {
+        if (e.key === 'rag-kanban-tasks' && e.newValue) {
+          try {
+            const updatedTasks = JSON.parse(e.newValue);
+            setTasks(updatedTasks);
+          } catch (error) {
+            console.error('Error syncing tasks from other tab:', error);
+          }
+        }
+      };
+
+      window.addEventListener('storage', handleStorageChange);
+      return () => window.removeEventListener('storage', handleStorageChange);
+    }
+  }, []);
 
   const columns = ['todo', 'in-progress', 'done'];
   const columnConfig = {
@@ -114,13 +168,57 @@ export default function Home() {
     return Math.round((done / tasks.length) * 100);
   };
 
+  // Export tasks to JSON file
+  const exportTasks = () => {
+    const dataStr = JSON.stringify(tasks, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `rag-kanban-progress-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Import tasks from JSON file
+  const importTasks = (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const imported = JSON.parse(e.target?.result);
+          if (Array.isArray(imported) && imported.length > 0) {
+            setTasks(imported);
+            alert('Progress imported successfully!');
+          } else {
+            alert('Invalid file format');
+          }
+        } catch (error) {
+          alert('Error importing file: ' + error.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  // Reset to initial state
+  const resetTasks = () => {
+    if (confirm('Are you sure you want to reset all tasks to initial state? This cannot be undone.')) {
+      setTasks(initialTasks);
+      alert('Tasks reset successfully!');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
       <div className="max-w-7xl mx-auto">
         
         {/* Compact Header */}
         <div className="bg-white/95 backdrop-blur rounded-2xl shadow-xl border border-white/20 p-6 mb-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-1">
                 RAG Workflow Setup
@@ -144,6 +242,32 @@ export default function Home() {
               className="h-3 rounded-full bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 transition-all duration-500 shadow-lg"
               style={{ width: `${getProgress()}%` }}
             />
+          </div>
+
+          {/* Backup Controls */}
+          <div className="mt-4 flex items-center gap-2 justify-end flex-wrap">
+            <span className="text-xs text-gray-500 mr-2">💾 Auto-saved to browser</span>
+            <button
+              onClick={exportTasks}
+              className="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-medium rounded-lg transition-colors"
+            >
+              📥 Export Progress
+            </button>
+            <label className="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 text-xs font-medium rounded-lg transition-colors cursor-pointer">
+              📤 Import Progress
+              <input
+                type="file"
+                accept=".json"
+                onChange={importTasks}
+                className="hidden"
+              />
+            </label>
+            <button
+              onClick={resetTasks}
+              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
+            >
+              🔄 Reset All
+            </button>
           </div>
         </div>
 
