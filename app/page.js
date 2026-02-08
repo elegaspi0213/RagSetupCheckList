@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+'use client'
+
+import React, { useState, useEffect } from 'react';
 import { CheckCircle2, Circle, Clock, GripVertical, ChevronDown, ChevronUp, X } from 'lucide-react';
 
-export default function RAGSetupKanban() {
-  const [tasks, setTasks] = useState([
+export default function Home() {
+  const initialTasks = [
     // Prerequisites
     { id: 1, title: 'Install Local n8n', status: 'todo', category: 'Prerequisites', details: 'Run: docker run -it --rm --name n8n -p 5678:5678 -v ~/.n8n:/home/node/.n8n n8nio/n8n', priority: 'high' },
     { id: 2, title: 'Create Supabase Account', status: 'todo', category: 'Prerequisites', details: 'Go to supabase.com and create a free account', priority: 'high' },
@@ -41,10 +43,25 @@ export default function RAGSetupKanban() {
     // Optional
     { id: 22, title: 'Adjust Chunk Size', status: 'todo', category: 'Optional', details: 'Optimize chunking parameters', priority: 'low' },
     { id: 23, title: 'Docker Compose Setup', status: 'todo', category: 'Optional', details: 'Create docker-compose.yml', priority: 'low' }
-  ]);
+  ];
+
+  const [tasks, setTasks] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('rag-kanban-tasks');
+      return saved ? JSON.parse(saved) : initialTasks;
+    }
+    return initialTasks;
+  });
 
   const [draggedTask, setDraggedTask] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
+
+  // Save to localStorage whenever tasks change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rag-kanban-tasks', JSON.stringify(tasks));
+    }
+  }, [tasks]);
 
   const columns = ['todo', 'in-progress', 'done'];
   const columnConfig = {
